@@ -1,12 +1,13 @@
 const { Pool } = require('pg');
+const { supabase } = require('./supabase');
 require('dotenv').config();
 
-// Usar a string de conexão da variável de ambiente
-const connectionString = process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_hKTcpGVsFJ40@ep-long-mouse-a46vfeji-pooler.us-east-1.aws.neon.tech/neondb?sslmode=require';
+// String de conexão para o PostgreSQL direto como fallback
+const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:postgres@db.bgyqzowtebcsdujywfom.supabase.co:5432/postgres';
 
-console.log('Tentando conectar ao banco de dados...');
+console.log('Configurando conexões com o banco de dados...');
 
-// Configuração da conexão com o banco de dados Neon (PostgreSQL)
+// Mantendo o pool do PostgreSQL para compatibilidade com código existente
 const pool = new Pool({
   connectionString: connectionString,
   ssl: true,
@@ -18,12 +19,7 @@ const pool = new Pool({
 
 // Evento para quando uma conexão é estabelecida
 pool.on('connect', () => {
-  console.log('Nova conexão estabelecida com o banco de dados');
-  
-  // Verificar conexão com consulta simples
-  pool.query('SELECT 1 AS connection_test')
-    .then(res => console.log('Conexão verificada com teste simples:', res.rows[0]))
-    .catch(err => console.error('Falha na verificação da conexão:', err.message));
+  console.log('Nova conexão estabelecida com o banco de dados PostgreSQL');
 });
 
 // Evento para quando há um erro em uma conexão
@@ -32,74 +28,189 @@ pool.on('error', (err) => {
   // Não encerre o processo, apenas registre o erro
 });
 
-// Crie uma consulta para verificar se as transações funcionam
-const testTransactionFunc = async () => {
-  const client = await pool.connect();
-  
-  try {
-    await client.query('BEGIN');
-    await client.query('SELECT 1 AS tx_test');
-    console.log('Transação de teste iniciada com sucesso');
-    await client.query('COMMIT');
-    console.log('Transação de teste finalizada com sucesso');
-  } catch (e) {
-    await client.query('ROLLBACK');
-    console.error('Erro na transação de teste:', e.message);
-  } finally {
-    client.release();
-  }
-};
-
-// Teste de conexão
-pool.connect((err, client, release) => {
-  if (err) {
-    console.error('Erro ao conectar ao banco de dados:', err.message);
-    console.error('Detalhes do erro:', JSON.stringify(err));
-    return;
-  }
-  console.log('Conexão com o banco de dados Neon estabelecida com sucesso!');
-  
-  // Testar consulta simples
-  client.query('SELECT NOW() as now', (err, result) => {
-    release();
-    if (err) {
-      console.error('Erro ao executar consulta de teste:', err.message);
-      return;
-    }
-    console.log('Consulta de teste executada com sucesso:', result.rows[0]);
-    
-    // Agora teste uma transação
-    testTransactionFunc();
-  });
-});
-
 // Função para executar consultas SQL
 async function query(text, params) {
+  const start = Date.now();
+  
+  try {
+    console.log('Executando consulta:', { text, params });
+    
+    // Tenta executar a query diretamente no Supabase
+    // Tratamento depende do tipo de consulta
+    if (text.trim().toUpperCase().startsWith('SELECT')) {
+      // Para SELECT, usamos o cliente Supabase
+      let table = '';
+      let conditions = [];
+      
+      // Tentativa simples de extrair a tabela e condições
+      const fromMatch = text.match(/FROM\s+(\w+)/i);
+      if (fromMatch && fromMatch[1]) {
+        table = fromMatch[1];
+        console.log(`Detectada tabela: ${table}`);
+        
+        // Para substituir a query SQL por chamadas de API do Supabase
+        // Tenta extrair condições WHERE 
+        const whereMatch = text.match(/WHERE\s+(.*?)(?:ORDER BY|GROUP BY|LIMIT|$)/i);
+        if (whereMatch && whereMatch[1]) {
+          conditions = whereMatch[1].trim();
+          console.log(`Detectadas condições: ${conditions}`);
+        }
+
+        // Executar via API
+        try {
+          let query = supabase.from(table).select('*');
+          
+          // Limitar resultados 
+          const limitMatch = text.match(/LIMIT\s+(\d+)/i);
+          if (limitMatch && limitMatch[1]) {
+            query = query.limit(parseInt(limitMatch[1]));
+          }
+          
+          const { data, error } = await query;
+          
+          if (error) throw error;
+          
+          const duration = Date.now() - start;
+          console.log('Consulta Supabase executada com sucesso:', { text, duration, rows: data.length });
+          
+          return { rows: data, rowCount: data.length };
+        } catch (selectError) {
+          console.error('Erro ao executar SELECT via Supabase API:', selectError);
+          // Fallback para PostgreSQL
+          return await queryFallback(text, params);
+        }
+      } else {
+        // Query SQL não reconhecida para API
+        return await queryFallback(text, params);
+      }
+    } else if (text.trim().toUpperCase().startsWith('INSERT')) {
+      // Para INSERT, usamos o cliente Supabase
+      const intoMatch = text.match(/INTO\s+(\w+)/i);
+      if (intoMatch && intoMatch[1]) {
+        const table = intoMatch[1];
+        console.log(`Detectada tabela para inserção: ${table}`);
+        
+        if (params && params.length > 0) {
+          try {
+            // Converter parâmetros em objeto para inserção
+            // Esta é uma estratégia genérica, pode precisar de adaptação
+            const values = {};
+            const columnsMatch = text.match(/\(([^)]+)\)/);
+            if (columnsMatch && columnsMatch[1]) {
+              const columns = columnsMatch[1].split(',').map(c => c.trim());
+              for (let i = 0; i < columns.length; i++) {
+                values[columns[i]] = params[i];
+              }
+            }
+            
+            const { data, error } = await supabase.from(table).insert(values).select();
+            
+            if (error) throw error;
+            
+            const duration = Date.now() - start;
+            console.log('INSERT via Supabase executado com sucesso:', { table, duration });
+            
+            return { rows: data, rowCount: data.length };
+          } catch (insertError) {
+            console.error('Erro ao executar INSERT via Supabase API:', insertError);
+            // Fallback para PostgreSQL
+            return await queryFallback(text, params);
+          }
+        }
+      }
+      // Fallback para PostgreSQL se não conseguir usar a API
+      return await queryFallback(text, params);
+    } else {
+      // Outros tipos de consulta SQL (UPDATE, DELETE, etc)
+      // Usamos o PostgreSQL diretamente
+      return await queryFallback(text, params);
+    }
+  } catch (error) {
+    const duration = Date.now() - start;
+    console.error('Erro geral na execução da consulta:', { text, params, duration, error: error.message });
+    console.error('Stack trace do erro:', error.stack);
+    
+    // Tenta usar o fallback
+    try {
+      return await queryFallback(text, params);
+    } catch (fallbackError) {
+      console.error('Erro no fallback:', fallbackError.message);
+      throw fallbackError;
+    }
+  }
+}
+
+// Função de fallback para usar o PostgreSQL direto
+async function queryFallback(text, params) {
   const start = Date.now();
   let client;
   
   try {
     client = await pool.connect();
-    console.log('Executando consulta:', { text, params });
+    console.log('Executando consulta via PostgreSQL direto:', { text, params });
     const result = await client.query(text, params);
     const duration = Date.now() - start;
-    console.log('Consulta executada com sucesso:', { text, duration, rows: result.rowCount });
+    console.log('Consulta PostgreSQL executada com sucesso:', { text, duration, rows: result.rowCount });
     return result;
   } catch (error) {
     const duration = Date.now() - start;
-    console.error('Erro ao executar consulta:', { text, params, duration, error: error.message });
+    console.error('Erro ao executar consulta PostgreSQL:', { text, params, duration, error: error.message });
     console.error('Stack trace do erro:', error.stack);
     throw error;
   } finally {
     if (client) {
       client.release();
-      console.log('Cliente liberado após consulta');
+      console.log('Cliente PostgreSQL liberado após consulta');
     }
   }
 }
 
+// Testar a conexão 
+async function testSupabaseConnection() {
+  try {
+    const { data, error } = await supabase.from('militares').select('count');
+    
+    if (error && error.code === '42P01') {
+      // A tabela não existe, mas a conexão está ok
+      console.log('A tabela militares não existe, mas a conexão com o Supabase está funcionando');
+      // Testar conexão básica
+      const authResponse = await supabase.auth.getSession();
+      console.log('Status da sessão Supabase:', authResponse.error ? 'Erro' : 'OK');
+      return !authResponse.error;
+    } else if (error) {
+      console.error('Erro ao testar conexão com Supabase:', error.message);
+      return false;
+    }
+    
+    console.log('Conexão com Supabase testada com sucesso!');
+    return true;
+  } catch (error) {
+    console.error('Erro ao testar conexão com Supabase:', error.message);
+    console.error('Stack trace do erro:', error.stack);
+    return false;
+  }
+}
+
+// Inicialização
+(async () => {
+  try {
+    console.log('Testando conexão com Supabase...');
+    const supabaseOk = await testSupabaseConnection();
+    
+    if (supabaseOk) {
+      console.log('Sistema utilizará o Supabase como banco de dados principal');
+    } else {
+      console.log('Sistema utilizará PostgreSQL direto como fallback');
+    }
+  } catch (error) {
+    console.error('Erro durante inicialização:', error);
+  }
+})();
+
 // Exporta as funções e objetos necessários
 module.exports = {
   query,
-  pool
+  queryFallback,
+  pool,
+  supabase
 };
