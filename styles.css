@@ -1,0 +1,158 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: Arial, sans-serif;
+}
+
+body {
+    background-color: #f5f5f5;
+    color: #333;
+}
+
+.container {
+    display: flex;
+    height: 100vh;
+}
+
+.sidebar {
+    width: 220px;
+    background-color: #0e1e33;
+    color: #fff;
+    padding: 20px 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    padding: 0 20px;
+    margin-bottom: 30px;
+}
+
+.logo img {
+    width: 40px;
+    height: 40px;
+    margin-right: 10px;
+}
+
+.logo h1 {
+    font-size: 18px;
+    font-weight: bold;
+}
+
+nav ul {
+    list-style: none;
+}
+
+nav li {
+    margin-bottom: 5px;
+}
+
+nav a {
+    display: flex;
+    align-items: center;
+    color: #a8b6c7;
+    text-decoration: none;
+    padding: 12px 20px;
+    transition: all 0.3s;
+}
+
+nav a:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+nav li.active a {
+    background-color: #1a5097;
+    color: #fff;
+}
+
+.icon {
+    margin-right: 10px;
+    font-size: 18px;
+}
+
+.main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+header {
+    background-color: #fff;
+    padding: 10px 20px;
+    border-bottom: 1px solid #ddd;
+}
+
+.browser-controls {
+    display: flex;
+    gap: 10px;
+}
+
+.browser-controls button {
+    background-color: #f0f0f0;
+    border: none;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.browser-controls button:hover {
+    background-color: #e0e0e0;
+}
+
+main {
+    flex: 1;
+    padding: 0;
+    overflow-y: auto;
+}
+
+.content-header {
+    background-color: #1a5097;
+    color: #fff;
+    padding: 30px;
+}
+
+.content-header h2 {
+    font-size: 28px;
+    margin-bottom: 5px;
+}
+
+.subtitle {
+    font-size: 16px;
+    opacity: 0.8;
+}
+
+.reports-section {
+    background-color: #0e1e33;
+    color: #fff;
+    margin-top: 15px;
+    padding: 20px 30px;
+}
+
+.section-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.section-icon {
+    margin-right: 10px;
+    font-size: 20px;
+}
+
+.report-selection {
+    background-color: #1a3048;
+    padding: 20px;
+    border-radius: 4px;
+}
+
+.report-selection p {
+    color: #a8b6c7;
+}
