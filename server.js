@@ -6,10 +6,11 @@ require('dotenv').config();
 // Importa os módulos de banco de dados
 const db = require('./db');
 const { inicializarBancoDados } = require('./models');
+const { inicializarSupabase } = require('./init-supabase'); // Importando o inicializador do Supabase
 const { processarRequisicaoAPI } = require('./api');
 
-// Porta alterada de 3000 para 8080
-const PORT = 8080;
+// Porta padrão
+const PORT = process.env.PORT || 8080;
 
 const MIME_TYPES = {
   '.html': 'text/html',
@@ -26,8 +27,20 @@ const MIME_TYPES = {
 // Função para testar a conexão com o banco de dados
 async function testarConexaoDB() {
   try {
+    // Teste com queries diretas
     const result = await db.query('SELECT NOW() as now');
     console.log('Teste de conexão com o banco:', result.rows[0]);
+    
+    // Teste com Supabase
+    const { supabase } = require('./supabase');
+    const { data, error } = await supabase.from('pg_catalog.pg_tables').select('*').limit(1);
+    
+    if (error) {
+      console.error('Erro no teste de conexão com Supabase:', error);
+      return false;
+    }
+    
+    console.log('Teste de conexão com Supabase bem-sucedido');
     return true;
   } catch (error) {
     console.error('Erro no teste de conexão com o banco:', error);
@@ -35,6 +48,7 @@ async function testarConexaoDB() {
   }
 }
 
+// Criar o servidor HTTP
 const server = http.createServer(async (req, res) => {
   console.log(`${req.method} ${req.url}`);
   
@@ -86,31 +100,92 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-// Inicializa o banco de dados antes de iniciar o servidor
-(async function() {
-  try {
-    console.log('Iniciando servidor...');
-    
-    // Testar conexão com o banco
-    const conexaoOK = await testarConexaoDB();
-    if (!conexaoOK) {
-      console.error('AVISO: Problemas com a conexão ao banco de dados!');
-      console.error('Verifique suas credenciais no arquivo .env ou se o banco está acessível.');
+// Função principal para inicializar o servidor
+function init(bancoDadosOK = false, supabaseOK = false) {
+  // Inicia o servidor na porta especificada
+  server.listen(PORT, () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
+    console.log(`Acesse: http://localhost:${PORT}`);
+    console.log(`Status do banco de dados: ${bancoDadosOK ? 'Conectado' : 'Com problemas'}`);
+    console.log(`Status do Supabase: ${supabaseOK ? 'Configurado' : 'Com problemas'}`);
+  });
+  
+  return server;
+}
+
+// Se este arquivo for executado diretamente, inicializa o servidor
+if (require.main === module) {
+  (async function() {
+    try {
+      console.log('Iniciando servidor diretamente...');
+      
+      // Testar conexão com o banco
+      const conexaoOK = await testarConexaoDB();
+      if (!conexaoOK) {
+        console.error('AVISO: Problemas com a conexão ao banco de dados!');
+        console.error('Verificando problema em detalhes...');
+        
+        try {
+          // Verificar se o problema é com as variáveis de ambiente
+          console.log('Verificando variáveis de ambiente:');
+          console.log('- SUPABASE_URL:', process.env.SUPABASE_URL ? 'Configurado' : 'Não configurado');
+          console.log('- SUPABASE_SERVICE_KEY:', process.env.SUPABASE_SERVICE_KEY ? 'Configurado' : 'Não configurado (comprimento da chave)');
+          console.log('- SUPABASE_ANON_KEY:', process.env.SUPABASE_ANON_KEY ? 'Configurado' : 'Não configurado (comprimento da chave)');
+          console.log('- DATABASE_URL:', process.env.DATABASE_URL ? 'Configurado' : 'Não configurado');
+          
+          // Tentar usar valores padrão se não estiverem configurados
+          console.log('Tentando usar valores padrão do arquivo supabase.js...');
+          const { supabaseUrl, serviceRoleKey } = require('./supabase');
+          console.log('URL do Supabase (fallback):', supabaseUrl);
+          console.log('Chave de serviço (fallback):', serviceRoleKey ? 'Disponível' : 'Não disponível');
+          
+        } catch (detailError) {
+          console.error('Erro ao verificar detalhes da conexão:', detailError);
+        }
+        
+        console.error('Verifique suas credenciais no arquivo .env ou se o banco está acessível.');
+      }
+      
+      // Inicializar banco de dados Supabase
+      console.log('Inicializando banco de dados Supabase...');
+      const supabaseOK = await inicializarSupabase();
+      if (!supabaseOK) {
+        console.error('AVISO: Falha ao inicializar o banco de dados Supabase!');
+        console.error('Tentando método alternativo...');
+      } else {
+        console.log('Banco de dados Supabase inicializado com sucesso!');
+      }
+      
+      // Inicializar banco de dados
+      const bancoDadosOK = await inicializarBancoDados();
+      if (!bancoDadosOK) {
+        console.error('AVISO: Falha ao inicializar o banco de dados!');
+        console.error('O sistema pode não funcionar corretamente.');
+        
+        // Forçar criação de tabelas como último recurso
+        console.log('Tentando forçar criação das tabelas como último recurso...');
+        try {
+          const { militarModel, escalaModel } = require('./models');
+          await militarModel.criarTabelaMilitares();
+          await escalaModel.criarTabelaEscalas();
+          await escalaModel.criarTabelaDetalhesEscala();
+          console.log('Tentativa de criação forçada de tabelas concluída.');
+        } catch (forceError) {
+          console.error('Erro ao forçar criação de tabelas:', forceError);
+        }
+      }
+      
+      // Iniciar o servidor mesmo com problemas
+      console.log('Iniciando servidor HTTP...');
+      init(bancoDadosOK || supabaseOK, supabaseOK);
+    } catch (error) {
+      console.error('Erro crítico ao inicializar o servidor:', error);
     }
-    
-    // Inicializar banco de dados
-    const bancoDadosOK = await inicializarBancoDados();
-    if (!bancoDadosOK) {
-      console.error('AVISO: Falha ao inicializar o banco de dados!');
-    }
-    
-    // Inicia o servidor mesmo com problemas no banco
-    server.listen(PORT, () => {
-      console.log(`Servidor rodando na porta ${PORT}`);
-      console.log(`Acesse: http://localhost:${PORT}`);
-      console.log(`Status do banco de dados: ${conexaoOK ? 'Conectado' : 'Com problemas'}`);
-    });
-  } catch (error) {
-    console.error('Erro crítico ao inicializar o servidor:', error);
-  }
-})();
+  })();
+}
+
+// Exportar o módulo
+module.exports = {
+  init,
+  server
+};

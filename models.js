@@ -413,80 +413,127 @@ const escalaModel = {
 
 // Inicializar as tabelas do banco de dados
 async function inicializarBancoDados() {
+  console.log('Inicializando banco de dados...');
+  
   try {
-    console.log("Iniciando criação das tabelas do banco de dados...");
+    // Criar tabelas se não existirem
+    const tabelaMilitaresOK = await militarModel.criarTabelaMilitares();
+    const tabelaEscalasOK = await escalaModel.criarTabelaEscalas();
+    const tabelaDetalhesEscalaOK = await escalaModel.criarTabelaDetalhesEscala();
     
-    // Testar conexão primeiro com o Supabase
-    try {
-      const { data, error } = await supabase.from('militares').select('count');
+    // Verificar se todas as tabelas foram criadas com sucesso
+    if (tabelaMilitaresOK && tabelaEscalasOK && tabelaDetalhesEscalaOK) {
+      console.log('Todas as tabelas inicializadas com sucesso!');
       
-      if (error) {
-        console.error("AVISO: Problema com a conexão ao Supabase:", error);
-        throw new Error("Falha na conexão com o Supabase");
+      // Adicionar dados de teste, se requisitado
+      if (process.env.CREATE_SAMPLE_DATA === 'true') {
+        await criarDadosExemplo();
       }
       
-      console.log("Conexão com o Supabase verificada com sucesso");
-    } catch (supabaseError) {
-      console.error("ERRO CRÍTICO: Falha na conexão com o Supabase:", supabaseError);
-      
-      // Tentar conexão com PostgreSQL direto
-      try {
-        const testResult = await db.queryFallback('SELECT 1 as db_test');
-        console.log("Teste de conexão PostgreSQL bem-sucedido:", testResult.rows[0]);
-      } catch (pgError) {
-        console.error("ERRO CRÍTICO: Todas as conexões com bancos de dados falharam");
-        throw new Error("Falha em todas as conexões de banco de dados");
-      }
-    }
-    
-    // Criar tabelas em sequência
-    const tabelaMilitares = await militarModel.criarTabelaMilitares();
-    const tabelaEscalas = await escalaModel.criarTabelaEscalas();
-    const tabelaDetalhes = await escalaModel.criarTabelaDetalhesEscala();
-    
-    // Verificar se todas as tabelas foram criadas
-    if (!tabelaMilitares || !tabelaEscalas || !tabelaDetalhes) {
-      console.error("AVISO: Nem todas as tabelas foram criadas com sucesso!");
+      return true;
+    } else {
+      console.error('Falha ao inicializar uma ou mais tabelas.');
       return false;
     }
-    
-    // Verificar se as tabelas existem e podem ser consultadas
-    try {
-      const { data: militares, error: militaresError } = await supabase
-        .from('militares')
-        .select('count');
-      
-      if (militaresError) throw militaresError;
-      console.log(`Tabela 'militares' existe e contém ${militares[0]?.count || 0} registros.`);
-      
-      const { data: escalas, error: escalasError } = await supabase
-        .from('escalas')
-        .select('count');
-      
-      if (escalasError) throw escalasError;
-      console.log(`Tabela 'escalas' existe e contém ${escalas[0]?.count || 0} registros.`);
-      
-      const { data: detalhes, error: detalhesError } = await supabase
-        .from('detalhes_escala')
-        .select('count');
-      
-      if (detalhesError) throw detalhesError;
-      console.log(`Tabela 'detalhes_escala' existe e contém ${detalhes[0]?.count || 0} registros.`);
-    } catch (tableError) {
-      console.error("Erro ao verificar tabelas:", tableError);
-      console.error("As tabelas podem não ter sido criadas corretamente.");
-      return false;
-    }
-    
-    console.log('Banco de dados inicializado com sucesso!');
-    return true;
   } catch (error) {
-    console.error('Erro ao inicializar banco de dados:', error);
+    console.error('Erro ao inicializar banco de dados:', error.message);
     console.error('Stack trace:', error.stack);
     return false;
   }
 }
 
+// Função para criar dados de exemplo para testes
+async function criarDadosExemplo() {
+  try {
+    console.log('Criando dados de exemplo...');
+    
+    // Verificar se já existem militares
+    const { data: militaresExistentes } = await supabase.from('militares').select('count');
+    
+    // Se já existirem militares, não cria novamente
+    if (militaresExistentes && militaresExistentes.length > 0 && militaresExistentes[0].count > 0) {
+      console.log('Já existem militares na base. Pulando criação de dados de exemplo.');
+      return true;
+    }
+    
+    // Dados de exemplo para militares
+    const militaresExemplo = [
+      {
+        nome: 'João Silva',
+        posto: 'Alfa',
+        numero_identificacao: '12345',
+        unidade: 'PMF'
+      },
+      {
+        nome: 'Maria Oliveira',
+        posto: 'Bravo',
+        numero_identificacao: '67890',
+        unidade: 'PMF'
+      },
+      {
+        nome: 'Pedro Santos',
+        posto: 'Charlie',
+        numero_identificacao: '54321',
+        unidade: 'PMF'
+      }
+    ];
+    
+    // Inserir militares
+    for (const militar of militaresExemplo) {
+      await militarModel.inserir(militar);
+    }
+    console.log(`${militaresExemplo.length} militares de exemplo criados.`);
+    
+    // Criar uma escala de exemplo
+    const dataAtual = new Date();
+    const dataFim = new Date();
+    dataFim.setDate(dataAtual.getDate() + 7); // Uma semana à frente
+    
+    const escalaExemplo = {
+      titulo: 'Escala semanal',
+      data_inicio: dataAtual.toISOString().split('T')[0],
+      data_fim: dataFim.toISOString().split('T')[0],
+      tipo: 'Patrulhamento',
+      status: 'ativa'
+    };
+    
+    const novaEscala = await escalaModel.inserirEscala(escalaExemplo);
+    console.log('Escala de exemplo criada:', novaEscala);
+    
+    // Adicionar detalhes à escala
+    if (novaEscala && novaEscala.id) {
+      // Adicionar cada militar a um dia da escala
+      const militaresIds = militaresExemplo.map((_, idx) => idx + 1);
+      
+      for (let i = 0; i < militaresIds.length; i++) {
+        const data = new Date();
+        data.setDate(dataAtual.getDate() + i);
+        
+        const detalhe = {
+          escala_id: novaEscala.id,
+          militar_id: militaresIds[i],
+          data_servico: data.toISOString().split('T')[0],
+          horario_inicio: '08:00',
+          horario_fim: '18:00',
+          funcao: 'Patrulhamento'
+        };
+        
+        await escalaModel.adicionarMilitarEscala(detalhe);
+      }
+      
+      console.log(`${militaresIds.length} detalhes de escala criados.`);
+    }
+    
+    console.log('Dados de exemplo criados com sucesso!');
+    return true;
+  } catch (error) {
+    console.error('Erro ao criar dados de exemplo:', error.message);
+    console.error('Stack trace:', error.stack);
+    return false;
+  }
+}
+
+// Exportar os modelos e funções necessárias
 module.exports = {
   militarModel,
   escalaModel,

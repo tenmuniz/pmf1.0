@@ -170,6 +170,200 @@ const rotasAPI = {
         enviarRespostaJSON(res, 500, { erro: 'Erro ao remover detalhe de escala' });
       }
     }
+  },
+  
+  // Rota para verificar conexão com Supabase
+  '/api/check-supabase': {
+    GET: async (req, res) => {
+      try {
+        const { supabase } = require('./supabase');
+        console.log('Verificando conexão com Supabase...');
+        
+        // Verificar conexão básica com o Supabase
+        const { data, error } = await supabase.from('pg_catalog.pg_tables').select('tablename').limit(10);
+        
+        if (error) {
+          console.error('Erro ao conectar com Supabase:', error);
+          enviarRespostaJSON(res, 500, { 
+            erro: 'Falha na conexão com o Supabase', 
+            detalhes: error.message,
+            codigo: error.code
+          });
+          return;
+        }
+        
+        // Verificar tabelas específicas
+        const tabelas = ['militares', 'escalas', 'detalhes_escala'];
+        const statusTabelas = {};
+        
+        for (const tabela of tabelas) {
+          try {
+            const { data: dadosTabela, error: erroTabela } = await supabase
+              .from(tabela)
+              .select('count');
+            
+            statusTabelas[tabela] = {
+              existe: !erroTabela,
+              erro: erroTabela ? erroTabela.message : null,
+              quantidade: dadosTabela && dadosTabela.length > 0 ? dadosTabela[0].count : 0
+            };
+          } catch (erroTabela) {
+            statusTabelas[tabela] = {
+              existe: false,
+              erro: erroTabela.message
+            };
+          }
+        }
+        
+        // Verificar variáveis de ambiente
+        const variaveisAmbiente = {
+          SUPABASE_URL: process.env.SUPABASE_URL ? 'Configurado' : 'Não configurado',
+          SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY ? 'Configurado' : 'Não configurado',
+          SUPABASE_ANON_KEY: process.env.SUPABASE_ANON_KEY ? 'Configurado' : 'Não configurado',
+          DATABASE_URL: process.env.DATABASE_URL ? 'Configurado' : 'Não configurado',
+          NODE_ENV: process.env.NODE_ENV || 'Não configurado'
+        };
+        
+        enviarRespostaJSON(res, 200, {
+          status: 'ok',
+          mensagem: 'Conexão com Supabase estabelecida',
+          tabelas: statusTabelas,
+          tabelas_sistema: data.map(t => t.tablename),
+          variaveis_ambiente: variaveisAmbiente,
+          timestamp: new Date().toISOString()
+        });
+      } catch (error) {
+        console.error('Erro ao verificar Supabase:', error);
+        enviarRespostaJSON(res, 500, { 
+          erro: 'Erro ao verificar conexão com Supabase', 
+          detalhes: error.message 
+        });
+      }
+    }
+  },
+  
+  // Rota para inicializar tabelas
+  '/api/force-init-tables': {
+    POST: async (req, res) => {
+      try {
+        const dados = await processarCorpoRequisicao(req);
+        const tabela = dados.table; // militares, escalas ou detalhes_escala
+        
+        console.log(`Solicitação para criar tabela: ${tabela}`);
+        
+        const { supabase } = require('./supabase');
+        const { militarModel, escalaModel } = require('./models');
+        
+        let resultado = false;
+        let mensagem = '';
+        
+        // Determinar qual tabela criar com base nos dados recebidos
+        if (tabela === 'militares') {
+          console.log('Criando tabela de militares...');
+          resultado = await militarModel.criarTabelaMilitares();
+          mensagem = 'Tabela de militares criada/verificada com sucesso!';
+        } else if (tabela === 'escalas') {
+          console.log('Criando tabela de escalas...');
+          resultado = await escalaModel.criarTabelaEscalas();
+          mensagem = 'Tabela de escalas criada/verificada com sucesso!';
+        } else if (tabela === 'detalhes_escala') {
+          console.log('Criando tabela de detalhes da escala...');
+          resultado = await escalaModel.criarTabelaDetalhesEscala();
+          mensagem = 'Tabela de detalhes da escala criada/verificada com sucesso!';
+        } else {
+          return enviarRespostaJSON(res, 400, {
+            erro: 'Tabela não especificada ou inválida',
+            tabelas_validas: ['militares', 'escalas', 'detalhes_escala']
+          });
+        }
+        
+        // Verificar se a tabela foi criada corretamente
+        const { error } = await supabase.from(tabela).select('count');
+        
+        if (error) {
+          console.error(`Erro ao verificar tabela ${tabela}:`, error);
+          
+          return enviarRespostaJSON(res, 500, {
+            erro: `Falha ao criar tabela ${tabela}`,
+            detalhes: error.message,
+            sugestao: 'Verifique suas variáveis de ambiente e permissões no Supabase'
+          });
+        }
+        
+        return enviarRespostaJSON(res, 200, {
+          sucesso: true,
+          mensagem,
+          tabela
+        });
+      } catch (error) {
+        console.error('Erro ao processar solicitação para criar tabela:', error);
+        
+        return enviarRespostaJSON(res, 500, {
+          erro: 'Erro interno do servidor ao criar tabela',
+          detalhes: error.message
+        });
+      }
+    }
+  },
+  
+  // Rota para verificar tabela específica
+  '/api/tabelas/:nome': {
+    GET: async (req, res) => {
+      try {
+        const { params } = req;
+        const nomeTabela = params.nome;
+        
+        console.log(`Verificando tabela: ${nomeTabela}`);
+        
+        const { supabase } = require('./supabase');
+        
+        // Tentar fazer uma consulta simples na tabela
+        const { data, error } = await supabase
+          .from(nomeTabela)
+          .select('count');
+        
+        if (error) {
+          return enviarRespostaJSON(res, 404, {
+            existe: false,
+            mensagem: `Tabela '${nomeTabela}' não encontrada ou erro ao verificar: ${error.message}`,
+            codigo: error.code
+          });
+        }
+        
+        // Verificar a estrutura mínima da tabela
+        let estruturaOK = true;
+        let colunasVerificadas = [];
+        
+        try {
+          const { data: sampleRecord, error: sampleError } = await supabase
+            .from(nomeTabela)
+            .select('*')
+            .limit(1);
+          
+          if (!sampleError && sampleRecord && sampleRecord.length > 0) {
+            colunasVerificadas = Object.keys(sampleRecord[0]);
+          }
+        } catch (estruturaError) {
+          estruturaOK = false;
+          console.error(`Erro ao verificar estrutura da tabela ${nomeTabela}:`, estruturaError);
+        }
+        
+        return enviarRespostaJSON(res, 200, {
+          existe: true,
+          tabela: nomeTabela,
+          quantidade: data[0]?.count || 0,
+          estrutura_ok: estruturaOK,
+          colunas: colunasVerificadas
+        });
+      } catch (error) {
+        console.error('Erro ao verificar tabela:', error);
+        
+        return enviarRespostaJSON(res, 500, {
+          erro: 'Erro interno do servidor ao verificar tabela',
+          detalhes: error.message
+        });
+      }
+    }
   }
 };
 

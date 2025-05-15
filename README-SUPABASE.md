@@ -1,90 +1,113 @@
-# Configuração do Supabase para o Sistema PMF 1.0
+# Configuração do Supabase no Sistema PMF
 
-Este guia contém instruções para configurar o Supabase como banco de dados para o Sistema PMF 1.0.
+Este guia fornece instruções detalhadas para configurar o banco de dados Supabase com o Sistema PMF e garantir que os dados sejam persistidos corretamente.
 
-## Chaves e Credenciais
+## Configuração no Vercel
 
-O sistema já está configurado com as seguintes credenciais:
+Para garantir a persistência dos dados, siga estas etapas:
 
-- **URL do Supabase**: https://bgyqzowtebcsdujywfom.supabase.co
-- **Chave service_role**: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJneXF6b3d0ZWJjc2R1anl3Zm9tIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0NzEwMzg2MSwiZXhwIjoyMDYyNjc5ODYxfQ.3f0dM9QTiCo2MY3yX8MbPLL5hjbhtGSoJwo6kejNyII
-- **Chave anon/public**: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJneXF6b3d0ZWJjc2R1anl3Zm9tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDcxMDM4NjEsImV4cCI6MjA2MjY3OTg2MX0.Nn1jL9DcUEn5ynB0vjvcxfm1jdJX9od8MVHow0iv7DQ
+1. **Acesse o dashboard do Vercel**:
+   - Faça login em [vercel.com](https://vercel.com/)
+   - Acesse seu projeto "pmf1-0"
 
-## Criação das Tabelas
+2. **Configure as variáveis de ambiente**:
+   - Vá para "Settings" > "Environment Variables"
+   - Adicione as seguintes variáveis:
 
-O Supabase não permite a criação de tabelas programaticamente usando a API REST sem SQL functions personalizadas. É necessário criar as tabelas manualmente através do painel de controle do Supabase.
+   ```
+   SUPABASE_URL=https://bgyqzowtebcsdujywfom.supabase.co
+   SUPABASE_SERVICE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJneXF6b3d0ZWJjc2R1anl3Zm9tIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0NzEwMzg2MSwiZXhwIjoyMDYyNjc5ODYxfQ.3f0dM9QTiCo2MY3yX8MbPLL5hjbhtGSoJwo6kejNyII
+   SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJneXF6b3d0ZWJjc2R1anl3Zm9tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDcxMDM4NjEsImV4cCI6MjA2MjY3OTg2MX0.Nn1jL9DcUEn5ynB0vjvcxfm1jdJX9od8MVHow0iv7DQ
+   DATABASE_URL=postgresql://postgres:postgres@db.bgyqzowtebcsdujywfom.supabase.co:5432/postgres
+   NODE_ENV=production
+   CREATE_SAMPLE_DATA=true
+   ```
 
-### Passo a Passo para Criar as Tabelas
+3. **Volte para a tela "Deployments"**:
+   - Clique em "Redeploy" para aplicar as mudanças
+   - Acompanhe os logs da construção para garantir que o banco de dados foi inicializado corretamente
 
-1. Acesse o painel do Supabase: https://app.supabase.com
-2. Selecione seu projeto
-3. Vá para "Table Editor" no menu lateral
-4. Clique em "SQL Editor"
-5. Cole e execute os seguintes SQLs:
+## Verificação no Navegador
 
-```sql
--- Tabela de militares
-CREATE TABLE militares (
-  id SERIAL PRIMARY KEY,
-  nome TEXT NOT NULL,
-  posto TEXT NOT NULL,
-  numero_identificacao TEXT NOT NULL UNIQUE,
-  unidade TEXT,
-  status TEXT DEFAULT 'ativo',
-  data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+Após o deploy, acesse sua aplicação no navegador e:
 
--- Tabela de escalas
-CREATE TABLE escalas (
-  id SERIAL PRIMARY KEY,
-  titulo TEXT NOT NULL,
-  data_inicio DATE NOT NULL,
-  data_fim DATE NOT NULL,
-  tipo TEXT NOT NULL,
-  status TEXT DEFAULT 'ativa',
-  data_criacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Tabela de detalhes da escala
-CREATE TABLE detalhes_escala (
-  id SERIAL PRIMARY KEY,
-  escala_id INTEGER REFERENCES escalas(id) ON DELETE CASCADE,
-  militar_id INTEGER REFERENCES militares(id) ON DELETE CASCADE,
-  data_servico DATE NOT NULL,
-  horario_inicio TIME NOT NULL,
-  horario_fim TIME NOT NULL,
-  funcao TEXT,
-  observacoes TEXT,
-  UNIQUE(escala_id, militar_id, data_servico)
-);
-```
-
-## Verificação da Configuração
-
-Para verificar se as tabelas foram criadas corretamente, execute o script de verificação:
-
-```bash
-node verificar-tabelas.js
-```
-
-Este script testará a conexão com o Supabase e verificará se todas as tabelas necessárias existem.
+1. Abra o console do navegador (F12)
+2. Utilize o botão "Testar API" para verificar se os dados estão sendo salvos
 
 ## Solução de Problemas
 
-Se encontrar algum erro durante a execução do sistema, verifique os seguintes pontos:
+Se os dados não estiverem persistindo:
 
-1. **Conexão com o Supabase**: Verifique se o Supabase está acessível e se as chaves API estão corretas.
-2. **Tabelas**: Execute o script `verificar-tabelas.js` para confirmar que todas as tabelas necessárias existem.
-3. **Permissões**: No painel do Supabase, verifique se as políticas de segurança (RLS) permitem operações nas tabelas.
+1. **Verifique os logs do Vercel**:
+   - Acesse "Deployments" > (último deploy) > "Logs"
+   - Procure por erros relacionados ao Supabase ou banco de dados
 
-## Observações
+2. **Execute os seguintes comandos no console do navegador**:
+   ```javascript
+   // Testar a conexão com a API
+   await testApiConnection();
+   
+   // Verificar o Supabase
+   await checkSupabase();
+   
+   // Adicionar um militar de teste
+   await testAddMilitar('Teste Manual', 'Delta', 'T-' + Date.now());
+   ```
 
-O sistema está configurado para usar o Supabase como banco de dados principal, mas mantém compatibilidade com o PostgreSQL direto como fallback. Isso garante que, caso haja algum problema com o Supabase, o sistema ainda possa funcionar através da conexão direta com o PostgreSQL.
+3. **Verifique as variáveis de ambiente**:
+   - Confirme que todas as variáveis estão definidas corretamente no Vercel
+   - Certifique-se de que as chaves do Supabase estão corretas
 
-Caso precise limpar os dados para iniciar do zero, execute os seguintes SQL no Supabase:
+## Comandos Úteis no Vercel
 
-```sql
-TRUNCATE detalhes_escala CASCADE;
-TRUNCATE escalas CASCADE;
-TRUNCATE militares CASCADE;
-``` 
+Você pode usar o console do Vercel para executar:
+
+```bash
+# Verificar variáveis de ambiente
+printenv | grep SUPABASE
+
+# Inicializar banco de dados manualmente
+node force-init-tables.js
+
+# Verificar tabelas existentes
+node verificar-tabelas-supabase.js
+```
+
+## Usando seu próprio banco Supabase
+
+Se quiser usar seu próprio banco Supabase:
+
+1. Crie uma conta em [supabase.com](https://supabase.com)
+2. Crie um novo projeto
+3. Obtenha a URL e as chaves API do seu projeto
+4. Substitua as variáveis de ambiente no Vercel com suas credenciais
+
+## Referência das Tabelas
+
+O sistema utiliza as seguintes tabelas:
+
+1. **militares**
+   - `id`: Identificador único (SERIAL PRIMARY KEY)
+   - `nome`: Nome do militar (VARCHAR)
+   - `posto`: Posto/patente (VARCHAR)
+   - `numero_identificacao`: Número de identificação (VARCHAR, UNIQUE)
+   - `unidade`: Unidade (VARCHAR)
+   - `status`: Status (VARCHAR, DEFAULT 'ativo')
+
+2. **escalas**
+   - `id`: Identificador único (SERIAL PRIMARY KEY)
+   - `titulo`: Título da escala (VARCHAR)
+   - `data_inicio`: Data de início (DATE)
+   - `data_fim`: Data de fim (DATE)
+   - `tipo`: Tipo de escala (VARCHAR)
+   - `status`: Status (VARCHAR, DEFAULT 'ativa')
+
+3. **detalhes_escala**
+   - `id`: Identificador único (SERIAL PRIMARY KEY)
+   - `escala_id`: Referência à tabela escalas (INTEGER, FOREIGN KEY)
+   - `militar_id`: Referência à tabela militares (INTEGER, FOREIGN KEY)
+   - `data_servico`: Data do serviço (DATE)
+   - `horario_inicio`: Hora de início (TIME)
+   - `horario_fim`: Hora de fim (TIME)
+   - `funcao`: Função (VARCHAR)
+   - `observacoes`: Observações (TEXT) 

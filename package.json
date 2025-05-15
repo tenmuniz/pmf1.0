@@ -1,0 +1,36 @@
+{
+  "name": "sistema-pmf",
+  "version": "1.0.0",
+  "description": "Sistema de gerenciamento de escalas de patrulhamento para a Polícia Militar",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js",
+    "init-db": "node init-supabase.js",
+    "test-connection": "node verificar-conexao.js",
+    "verify-tables": "node verificar-tabelas-supabase.js",
+    "create-tables": "node init-supabase.js",
+    "verify-all": "node verificar-conexao.js && node verificar-tabelas-supabase.js",
+    "force-init": "node force-init-tables.js",
+    "vercel-build": "node vercel-build.js"
+  },
+  "keywords": [
+    "pmf",
+    "sistema",
+    "escalas",
+    "policia"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "dotenv": "^16.3.1",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=18.x"
+  }
+} 
